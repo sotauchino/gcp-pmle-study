@@ -41,7 +41,7 @@ window.DOMAINS = [
  html:`
 <h3>この領域で問われること</h3>
 <ul>
-<li>大規模データの探索・前処理（Dataflow, Dataproc, BigQuery, Dataprep）</li>
+<li>大規模データの探索・前処理（BigQuery, Dataflow, Dataproc）</li>
 <li>Feature Store（Vertex AI Feature Store）による特徴量の再利用と Training-Serving Skew 防止</li>
 <li>Vertex AI Experiments / TensorBoard / Model Registry によるメタデータ・実験・バージョン管理</li>
 <li>Responsible AI（公平性、説明可能性、プライバシー）</li>

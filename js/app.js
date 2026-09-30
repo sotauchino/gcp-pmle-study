@@ -5,12 +5,15 @@ const $app=document.getElementById("app");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const D=window.DOMAINS,Q=window.QUESTIONS,C=window.CARDS;
 const dn=id=>D.find(d=>d.id==id);
-const CARD_ID=(c,i)=>"c"+i;
+const CARD_ID=c=>"c:"+c.f;
 
 /* ---------- storage ---------- */
 let S;
-function load(){try{S=JSON.parse(localStorage.getItem(KEY))||{}}catch(e){S={}}
-  S.done=S.done||{};S.ans=S.ans||{};S.cards=S.cards||{};S.notes=S.notes||[];S.mock=S.mock||[];}
+const obj=x=>x&&typeof x==="object"&&!Array.isArray(x)?x:{};
+function clean(d){d=obj(d);return{done:obj(d.done),ans:obj(d.ans),cards:obj(d.cards),
+  notes:(Array.isArray(d.notes)?d.notes:[]).filter(n=>n&&n.id).map(n=>({id:String(n.id),title:String(n.title||""),tag:String(n.tag||""),body:String(n.body||""),t:+n.t||Date.now()})),
+  mock:(Array.isArray(d.mock)?d.mock:[]).map(m=>({t:+m.t||0,ok:+m.ok||0,n:+m.n||0}))}}
+function load(){let d;try{d=JSON.parse(localStorage.getItem(KEY))}catch(e){}S=clean(d)}
 let memOnly=false;
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){memOnly=true}}
 load();
@@ -24,6 +27,7 @@ function download(name,text){const a=document.createElement("a");a.href=URL.crea
 function domStats(){return D.map(d=>{const qs=Q.filter(q=>q.d==d.id);let n=0,ok=0;
   qs.forEach(q=>{const a=S.ans[q.id];if(a){n++;if(a.last)ok++}});
   return{d,total:qs.length,n,ok}})}
+function known(){return C.filter(c=>S.cards[CARD_ID(c)]==="known").length}
 function isWrong(q){const a=S.ans[q.id];return a&&!a.last}
 function record(q,correct){const a=S.ans[q.id]||(S.ans[q.id]={c:0,w:0});correct?a.c++:a.w++;a.last=correct;save()}
 
@@ -56,7 +60,7 @@ function home(){
   <div class="grid">
     <div class="card"><b>学習ページ</b><p class="muted">${done}/${D.length} 領域 完了</p>${bar(pct(done,D.length))}<p><a class="btn" href="#/learn">学習する</a></p></div>
     <div class="card"><b>問題集</b><p class="muted">${ans}/${totalQ} 問 回答済み・正答率 ${pct(ok,ans)}%</p>${bar(pct(ok,ans))}<p><a class="btn pri" href="#/quiz">問題を解く</a></p></div>
-    <div class="card"><b>暗記カード</b><p class="muted">${Object.values(S.cards).filter(v=>v==="known").length}/${C.length} 枚 覚えた</p>${bar(pct(Object.values(S.cards).filter(v=>v==="known").length,C.length))}<p><a class="btn" href="#/cards">めくる</a></p></div>
+    <div class="card"><b>暗記カード</b><p class="muted">${known()}/${C.length} 枚 覚えた</p>${bar(pct(known(),C.length))}<p><a class="btn" href="#/cards">めくる</a></p></div>
     <div class="card"><b>メモ帳</b><p class="muted">${S.notes.length} 件</p><p><a class="btn" href="#/notes">開く</a></p></div>
   </div>
   <div class="card"><h2>おすすめの進め方</h2><ol>
@@ -86,7 +90,6 @@ function learn(p){
 let Z=null; // session
 function quiz(p,params){
   if(p[1]==="run"&&Z){return runQuiz()}
-  if(params.get("d")&&!p[1]){/* preselect */}
   const pre=params.get("d")||"all";
   const wrong=Q.filter(isWrong).length,unans=Q.filter(q=>!S.ans[q.id]).length;
   $app.innerHTML=`<h1>問題集</h1>
@@ -124,6 +127,7 @@ function runQuiz(){
      :`<button class="btn pri" data-act="next">${Z.i==n-1?"結果を見る":"次の問題 →"}</button>`}
      <button class="btn" data-act="quit">中断</button>`}
   </div>${Z.mock?`<p class="muted">未回答：${Z.qs.filter(x=>!x.sel.length).length}問</p>`:""}`;
+  if(timer){clearInterval(timer);timer=null}
   if(Z.mock){const tick=()=>{const t=Math.max(0,Z.deadline-Date.now()),el=document.getElementById("tm");
       if(el)el.textContent="残り "+String(Math.floor(t/60000)).padStart(2,"0")+":"+String(Math.floor(t/1000)%60).padStart(2,"0");
       if(t<=0){clearInterval(timer);timer=null;finish()}};tick();timer=setInterval(tick,1000)}
@@ -173,15 +177,20 @@ function notes(p,params){
     if(params.get("q")){const q=Q.find(x=>x.id===params.get("q"));if(q){editing.title="問題メモ："+q.q.slice(0,30);editing.body=q.q+"\n\n正解："+q.a.map(i=>q.c[i]).join(" / ")+"\n"+q.e+"\n\n"; editing.tag="領域"+q.d}}
     history.replaceState(null,"","#/notes");}
   if(editing)return editor();
-  const f=(window.__nq||"").toLowerCase();
-  const list=S.notes.filter(n=>!f||(n.title+n.body+n.tag).toLowerCase().includes(f)).sort((a,b)=>b.t-a.t);
   $app.innerHTML=`<h1>メモ帳</h1><div class="row"><button class="btn pri" data-act="newnote">＋ 新規メモ</button>
   <input type="text" id="nq" placeholder="検索（タイトル・本文・タグ）" value="${esc(window.__nq||"")}" style="flex:1;min-width:180px">
   <button class="btn" data-act="exp">エクスポート</button><label class="btn">インポート<input type="file" id="imp" accept=".json" hidden></label></div>
   <p class="muted">メモはこのブラウザ内（localStorage）にのみ保存されます。端末を変える際はエクスポート/インポートを使ってください。</p>
-  ${list.length?list.map(n=>`<div class="card"><div class="row" style="justify-content:space-between"><b>${esc(n.title||"（無題）")}</b>
+  <div id="nl"></div>`;
+  renderNoteList();
+}
+function renderNoteList(){
+  const el=document.getElementById("nl");if(!el)return;
+  const f=(window.__nq||"").toLowerCase();
+  const list=S.notes.filter(n=>!f||(n.title+n.body+n.tag).toLowerCase().includes(f)).sort((a,b)=>b.t-a.t);
+  el.innerHTML=`${list.length?list.map(n=>`<div class="card"><div class="row" style="justify-content:space-between"><b>${esc(n.title||"（無題）")}</b>
    <span>${n.tag?`<span class="tag">${esc(n.tag)}</span>`:""}<span class="muted">${new Date(n.t).toLocaleDateString("ja-JP")}</span></span></div>
-   <p style="white-space:pre-wrap">${esc(n.body)}</p><div class="row"><button class="btn" data-act="editnote" data-id="${n.id}">編集</button><button class="btn ng" data-act="delnote" data-id="${n.id}">削除</button></div></div>`).join(""):'<div class="card muted">メモはまだありません。</div>'}`;
+   <p style="white-space:pre-wrap">${esc(n.body)}</p><div class="row"><button class="btn" data-act="editnote" data-id="${n.id}">編集</button><button class="btn ng" data-act="delnote" data-id="${n.id}">削除</button></div></div>`).join(""):(f?'<div class="card muted">該当するメモはありません。</div>':'<div class="card muted">メモはまだありません。</div>')}`;
 }
 function editor(){
   $app.innerHTML=`<h1>${editing.isNew?"新規メモ":"メモを編集"}</h1><div class="card">
@@ -223,7 +232,7 @@ $app.addEventListener("click",e=>{
   case"qnote":location.hash="#/notes?new=1&q="+Z.qs[Z.i].q.id;break;
   case"retrywrong":newSession(Q.filter(isWrong),false);break;
   case"startc":{const d=v("cd").value,f=v("cf").value;
-    let l=C.map((c,i)=>({c,id:CARD_ID(c,i)})).filter(x=>(d==="all"||x.c.d==d)&&(f==="all"||S.cards[x.id]!=="known"));
+    let l=C.map(c=>({c,id:CARD_ID(c)})).filter(x=>(d==="all"||x.c.d==d)&&(f==="all"||S.cards[x.id]!=="known"));
     if(!l.length){alert("該当するカードがありません");break}K={list:shuffle(l),i:0,back:false};location.hash="#/cards/run";break}
   case"flip":K.back=!K.back;runCards();break;
   case"known":case"unknown":S.cards[K.list[K.i].id]=a==="known"?"known":"unknown";save();K.i++;K.back=false;runCards();break;
@@ -239,14 +248,14 @@ $app.addEventListener("click",e=>{
   case"reset":if(confirm("進捗・メモ・カードの記録をすべて削除します。よろしいですか？")){S={};try{localStorage.removeItem(KEY)}catch(e){}load();go()}break;
   }
 });
-$app.addEventListener("input",e=>{if(e.target.id==="nq"){window.__nq=e.target.value;const pos=e.target.selectionStart;go();const el=document.getElementById("nq");el.focus();el.setSelectionRange(pos,pos)}});
+$app.addEventListener("input",e=>{if(e.target.id==="nq"){window.__nq=e.target.value;renderNoteList()}});
 $app.addEventListener("change",e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
   const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);
-    if(e.target.id==="imp"){if(!Array.isArray(d))throw 0;const ids=new Set(S.notes.map(n=>n.id));d.forEach(n=>{if(n&&n.id&&!ids.has(n.id))S.notes.push({id:String(n.id),title:String(n.title||""),tag:String(n.tag||""),body:String(n.body||""),t:+n.t||Date.now()})})}
-    else{if(typeof d!=="object"||Array.isArray(d))throw 0;S=d;S.done=S.done||{};S.ans=S.ans||{};S.cards=S.cards||{};S.notes=S.notes||[];S.mock=S.mock||[]}
+    if(e.target.id==="imp"){if(!Array.isArray(d))throw 0;const ids=new Set(S.notes.map(n=>n.id));clean({notes:d}).notes.forEach(n=>{if(!ids.has(n.id))S.notes.push(n)})}
+    else{if(typeof d!=="object"||Array.isArray(d)||!d)throw 0;S=clean(d)}
     save();go();alert("インポートしました")}catch(x){alert("ファイルの形式が正しくありません")}};
-  r.readAsText(f);
+  r.readAsText(f);e.target.value="";
 });
 go();
 })();

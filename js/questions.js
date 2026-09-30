@@ -11,7 +11,7 @@ window.QUESTIONS = [
  c:["Cloud Vision API のラベル検出","Vertex AI の AutoML 画像分類","BigQuery ML の K-means","Natural Language API"],a:[1],
  e:"独自カテゴリ×ラベル付きデータ×低コード → AutoML。Vision APIの汎用ラベルは独自カテゴリに対応しない。"},
 {id:"q104",d:1,q:"BigQuery ML で直接サポートされているものを2つ選べ。",
- c:["ARIMA_PLUS による時系列予測","K-means によるクラスタリング","CREATE MODEL の中でTPU Podを指定したカスタムPyTorch学習","ミリ秒未満のオンライン特徴量サービング"],a:[0,1],
+ c:["ARIMA_PLUS による時系列予測","K-means によるクラスタリング","CREATE MODEL の中でTPU Podを指定したカスタムPyTorch学習","低遅延のオンライン特徴量サービング（特徴量の一元管理）"],a:[0,1],
  e:"ARIMA_PLUS と K-means は BQML の対応モデル。カスタムPyTorchのTPU学習やオンライン特徴量サービングはBQMLの範囲外（前者はVertex AI Training、後者はFeature Store）。"},
 {id:"q105",d:1,q:"大量の行列演算が中心で、カスタムopが少ない大規模なJAX/TensorFlowモデルを大きなバッチで学習する。最も適切なアクセラレータは？",
  c:["CPU","TPU","Edge TPU","GPUは使えない"],a:[1],
