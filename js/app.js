@@ -23,7 +23,28 @@ const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random(
 const same=(a,b)=>a.length===b.length&&a.every(x=>b.includes(x));
 const pct=(a,b)=>b?Math.round(a/b*100):0;
 const bar=p=>`<div class="bar"><i style="width:${p}%"></i></div>`;
-function download(name,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+const $dlg=document.getElementById("dlg"),$toast=document.getElementById("toast");
+let dlgYes=null;
+function ask(msg,yesLabel,onYes,danger){dlgYes=onYes;
+  $dlg.innerHTML=`<div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="dlgm"><p id="dlgm">${esc(msg)}</p>
+  <div class="row"><button class="btn ${danger?"ng":"pri"}" data-dlg="yes">${esc(yesLabel)}</button><button class="btn" data-dlg="no">キャンセル</button></div></div>`;
+  $dlg.hidden=false;$dlg.querySelector("[data-dlg=yes]").focus()}
+function closeDlg(){$dlg.hidden=true;$dlg.innerHTML="";dlgYes=null}
+$dlg.addEventListener("click",e=>{const b=e.target.closest("[data-dlg]");if(e.target===$dlg||(b&&b.dataset.dlg==="no")){closeDlg();return}
+  if(b&&b.dataset.dlg==="yes"){const f=dlgYes;closeDlg();f&&f()}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$dlg.hidden)closeDlg()});
+let toastT=null;
+function toast(msg){$toast.textContent=msg;$toast.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{$toast.hidden=true},2600)}
+function exportPanel(name,text){
+  $dlg.innerHTML=`<div class="dlg-box wide" role="dialog" aria-modal="true" aria-labelledby="exh"><h2 id="exh">エクスポート</h2>
+  <p class="muted">下のJSONをコピーして保存してください。別の端末では「インポート」から、このJSONを保存したファイルを読み込めます。</p>
+  <textarea id="exta" readonly>${esc(text)}</textarea>
+  <div class="row"><button class="btn pri" id="excopy">コピー</button><button class="btn" id="exdl">ファイルに保存</button><button class="btn" data-dlg="no">閉じる</button></div></div>`;
+  $dlg.hidden=false;const ta=document.getElementById("exta");
+  document.getElementById("excopy").onclick=()=>{const fb=()=>{ta.focus();ta.select();toast("選択しました。Ctrl+C（⌘C）でコピーしてください")};
+    try{navigator.clipboard.writeText(text).then(()=>toast("コピーしました"),fb)}catch(e){fb()}};
+  document.getElementById("exdl").onclick=()=>{try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;document.body.appendChild(a);a.click();a.remove()}catch(e){}
+    toast("保存できない環境では「コピー」を使ってください")}}
 function domStats(){return D.map(d=>{const qs=Q.filter(q=>q.d==d.id);let n=0,ok=0;
   qs.forEach(q=>{const a=S.ans[q.id];if(a){n++;if(a.last)ok++}});
   return{d,total:qs.length,n,ok}})}
@@ -35,6 +56,7 @@ function record(q,correct){const a=S.ans[q.id]||(S.ans[q.id]={c:0,w:0});correct?
 let timer=null;
 function go(){
   if(timer){clearInterval(timer);timer=null}
+  if(!$dlg.hidden)closeDlg();
   const h=location.hash.replace(/^#\/?/,"");const [path,qs]=h.split("?");const p=path.split("/");
   const params=new URLSearchParams(qs||"");
   document.querySelectorAll("#nav a").forEach(a=>a.classList.toggle("on",a.dataset.r===(p[0]||"")));
@@ -219,7 +241,7 @@ $app.addEventListener("click",e=>{
   case"done":S.done[t.dataset.id]?delete S.done[t.dataset.id]:S.done[t.dataset.id]=true;save();go();break;
   case"startq":{let l=Q.slice();const d=v("qd").value,f=v("qf").value,n=v("qn").value;
     if(d!=="all")l=l.filter(q=>q.d==d);if(f==="unans")l=l.filter(q=>!S.ans[q.id]);if(f==="wrong")l=l.filter(isWrong);
-    if(!l.length){alert("該当する問題がありません");break}
+    if(!l.length){toast("該当する問題がありません");break}
     l=shuffle(l);if(n!=="all")l=l.slice(0,+n);newSession(l,false);break}
   case"startmock":newSession(Q,true);break;
   case"pick":{const it=Z.qs[Z.i];if(it.done)break;const oi=+t.dataset.oi,multi=it.q.a.length>1;
@@ -227,25 +249,25 @@ $app.addEventListener("click",e=>{
   case"check":{const it=Z.qs[Z.i];it.done=true;it.ok=same(it.sel.slice().sort(),it.q.a.slice().sort());record(it.q,it.ok);runQuiz();break}
   case"next":if(!Z.mock&&Z.i==Z.qs.length-1){finish();break}Z.i++;runQuiz();break;
   case"prev":Z.i--;runQuiz();break;
-  case"finish":if(confirm("採点して終了しますか？"))finish();break;
-  case"quit":if(confirm("中断しますか？（回答済みの記録は保存されています）")){Z=null;location.hash="#/quiz"}break;
+  case"finish":{const u=Z.qs.filter(x=>!x.sel.length).length;ask(u?`未回答が${u}問あります。採点して終了しますか？`:"採点して終了しますか？","採点する",finish);break}
+  case"quit":ask("中断しますか？（回答済みの問題の記録は保存されています）","中断する",()=>{Z=null;location.hash="#/quiz"});break;
   case"qnote":location.hash="#/notes?new=1&q="+Z.qs[Z.i].q.id;break;
   case"retrywrong":newSession(Q.filter(isWrong),false);break;
   case"startc":{const d=v("cd").value,f=v("cf").value;
     let l=C.map(c=>({c,id:CARD_ID(c)})).filter(x=>(d==="all"||x.c.d==d)&&(f==="all"||S.cards[x.id]!=="known"));
-    if(!l.length){alert("該当するカードがありません");break}K={list:shuffle(l),i:0,back:false};location.hash="#/cards/run";break}
+    if(!l.length){toast("該当するカードがありません");break}K={list:shuffle(l),i:0,back:false};location.hash="#/cards/run";break}
   case"flip":K.back=!K.back;runCards();break;
   case"known":case"unknown":S.cards[K.list[K.i].id]=a==="known"?"known":"unknown";save();K.i++;K.back=false;runCards();break;
   case"newnote":location.hash="#/notes?new=1";break;
   case"editnote":editing={...S.notes.find(n=>n.id===t.dataset.id)};go();break;
-  case"delnote":if(confirm("削除しますか？")){S.notes=S.notes.filter(n=>n.id!==t.dataset.id);save();go()}break;
+  case"delnote":{const id=t.dataset.id;ask("このメモを削除しますか？","削除する",()=>{S.notes=S.notes.filter(n=>n.id!==id);save();go();toast("削除しました")},true);break}
   case"savenote":{const n={id:editing.id,title:v("et").value.trim(),tag:v("eg").value.trim(),body:v("eb").value,t:Date.now()};
-    if(!n.title&&!n.body){alert("内容を入力してください");break}
-    const i=S.notes.findIndex(x=>x.id===n.id);i>=0?S.notes[i]=n:S.notes.push(n);save();editing=null;go();break}
+    if(!n.title&&!n.body.trim()){toast("タイトルか本文を入力してください");break}
+    const i=S.notes.findIndex(x=>x.id===n.id);i>=0?S.notes[i]=n:S.notes.push(n);save();editing=null;go();toast("保存しました");break}
   case"cancelnote":editing=null;go();break;
-  case"exp":download("pmle-notes.json",JSON.stringify(S.notes,null,2));break;
-  case"expall":download("pmle-study-data.json",JSON.stringify(S,null,2));break;
-  case"reset":if(confirm("進捗・メモ・カードの記録をすべて削除します。よろしいですか？")){S={};try{localStorage.removeItem(KEY)}catch(e){}load();go()}break;
+  case"exp":exportPanel("pmle-notes.json",JSON.stringify(S.notes,null,2));break;
+  case"expall":exportPanel("pmle-study-data.json",JSON.stringify(S,null,2));break;
+  case"reset":ask("進捗・メモ・カードの記録をすべて削除します。元に戻せません。","すべて削除",()=>{S=clean({});try{localStorage.removeItem(KEY)}catch(e){}go();toast("削除しました")},true);break;
   }
 });
 $app.addEventListener("input",e=>{if(e.target.id==="nq"){window.__nq=e.target.value;renderNoteList()}});
@@ -254,7 +276,7 @@ $app.addEventListener("change",e=>{
   const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);
     if(e.target.id==="imp"){if(!Array.isArray(d))throw 0;const ids=new Set(S.notes.map(n=>n.id));clean({notes:d}).notes.forEach(n=>{if(!ids.has(n.id))S.notes.push(n)})}
     else{if(typeof d!=="object"||Array.isArray(d)||!d)throw 0;S=clean(d)}
-    save();go();alert("インポートしました")}catch(x){alert("ファイルの形式が正しくありません")}};
+    save();go();toast("インポートしました")}catch(x){toast("読み込めませんでした。エクスポートしたJSONファイルを選んでください")}};
   r.readAsText(f);e.target.value="";
 });
 go();
