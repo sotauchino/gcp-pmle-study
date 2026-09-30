@@ -9,13 +9,59 @@ const CARD_ID=c=>"c:"+c.f;
 
 /* ---------- storage ---------- */
 let S;
+const safeId=x=>{const v=String(x).replace(/[^A-Za-z0-9_\-~:@+]/g,"_").slice(0,120);return v||"n"+Date.now()};
 const obj=x=>x&&typeof x==="object"&&!Array.isArray(x)?x:{};
 function clean(d){d=obj(d);return{done:obj(d.done),ans:obj(d.ans),cards:obj(d.cards),
-  notes:(Array.isArray(d.notes)?d.notes:[]).filter(n=>n&&n.id).map(n=>({id:String(n.id),title:String(n.title||""),tag:String(n.tag||""),body:String(n.body||""),t:+n.t||Date.now()})),
-  mock:(Array.isArray(d.mock)?d.mock:[]).map(m=>({t:+m.t||0,ok:+m.ok||0,n:+m.n||0}))}}
+  notes:(Array.isArray(d.notes)?d.notes:[]).filter(n=>n&&n.id).map(n=>({id:safeId(n.id),title:String(n.title||""),tag:String(n.tag||""),body:String(n.body||""),t:+n.t||Date.now()})),
+  mock:(Array.isArray(d.mock)?d.mock:[]).slice(-100).map(m=>({t:+m.t||0,ok:+m.ok||0,n:+m.n||0}))}}
 function load(){let d;try{d=JSON.parse(localStorage.getItem(KEY))}catch(e){}S=clean(d)}
 let memOnly=false;
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){memOnly=true}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){memOnly=true}scheduleSync(600)}
+
+/* ---------- cloud sync (claude.ai artifact only; otherwise browser storage) ---------- */
+const cloud={st:"local",doc:null,col:null,lastP:null,lastN:{},t:null,busy:false,again:false,retried:false};
+const progOf=()=>({done:S.done,ans:S.ans,cards:S.cards,mock:S.mock.slice(-100)});
+const SYNC_TEXT={local:["このブラウザに保存","このブラウザ内にのみ保存しています。閲覧データを削除すると消えます"],
+  loading:["読み込み中…","クラウドのデータを読み込んでいます"],ok:["クラウドに保存済み","claude.ai のあなた専用の領域に保存しています。別の端末からも同じデータを使えます"],
+  saving:["保存中…","クラウドに保存しています"],error:["クラウド保存に失敗","このブラウザには保存済みです。次に操作したときに再送します"]};
+function setSync(st){cloud.st=st;const el=document.getElementById("sync");if(!el)return;
+  el.textContent=SYNC_TEXT[st][0];el.title=SYNC_TEXT[st][1];el.dataset.st=st;el.hidden=false}
+function scheduleSync(ms){if(!cloud.doc)return;clearTimeout(cloud.t);cloud.t=setTimeout(runSync,ms)}
+async function runSync(){
+  if(cloud.busy){cloud.again=true;return}
+  cloud.busy=true;setSync("saving");
+  try{
+    const p=JSON.stringify(progOf());
+    if(p!==cloud.lastP){await cloud.doc.set(JSON.parse(p));cloud.lastP=p}
+    const cur={};S.notes.forEach(n=>{cur[n.id]=n});
+    for(const id in cur){const j=JSON.stringify(cur[id]);if(j!==cloud.lastN[id]){await cloud.col.doc(id).set(cur[id]);cloud.lastN[id]=j}}
+    for(const id of Object.keys(cloud.lastN)){if(!cur[id]){await cloud.col.doc(id).delete();delete cloud.lastN[id]}}
+    setSync("ok");cloud.retried=false;
+  }catch(e){setSync("error");
+    if(e&&e.code==="unavailable"&&!cloud.retried){cloud.retried=true;setTimeout(()=>scheduleSync(0),2000+Math.random()*2000)}
+    if(e&&e.code==="quota_exceeded")toast("クラウドの保存容量が上限です。不要なメモを削除してください");
+  }finally{cloud.busy=false;if(cloud.again){cloud.again=false;scheduleSync(0)}}
+}
+async function cloudInit(){
+  const c=window.claude;if(!c||typeof c.use!=="function"){setSync("local");return}
+  setSync("loading");
+  try{
+    const [db,user]=await Promise.all([c.use("db"),c.use("user")]);
+    const uid=user?await user.id():null;
+    if(!db||!uid){setSync("local");return}
+    const doc=db.doc("data/users/"+uid+"/progress"),col=doc.collection("notes");
+    const [ps,ns]=await Promise.all([doc.get(),col.get()]);
+    if(ps.exists||!ns.empty){ // the cloud copy wins; otherwise this browser's data is uploaded
+      S=clean(Object.assign({},ps.data()||{},{notes:ns.docs.map(x=>x.data())}));
+      cloud.lastP=JSON.stringify(progOf());
+      S.notes.forEach(n=>{cloud.lastN[n.id]=JSON.stringify(n)});
+      try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+      if(!editing)go();
+    }
+    cloud.doc=doc;cloud.col=col;setSync("ok");scheduleSync(0);
+  }catch(e){setSync("error")}
+}
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&cloud.t){clearTimeout(cloud.t);runSync()}});
 load();
 
 /* ---------- helpers ---------- */
@@ -202,7 +248,7 @@ function notes(p,params){
   $app.innerHTML=`<h1>メモ帳</h1><div class="row"><button class="btn pri" data-act="newnote">＋ 新規メモ</button>
   <input type="text" id="nq" placeholder="検索（タイトル・本文・タグ）" value="${esc(window.__nq||"")}" style="flex:1;min-width:180px">
   <button class="btn" data-act="exp">エクスポート</button><label class="btn">インポート<input type="file" id="imp" accept=".json" hidden></label></div>
-  <p class="muted">メモはこのブラウザ内（localStorage）にのみ保存されます。端末を変える際はエクスポート/インポートを使ってください。</p>
+  <p class="muted">${cloud.doc?"メモは claude.ai のあなた専用の領域に保存され、別の端末からも見られます。":"メモはこのブラウザ内にのみ保存されます。端末を変えるときや念のためのバックアップには、エクスポート/インポートを使ってください。"}</p>
   <div id="nl"></div>`;
   renderNoteList();
 }
@@ -267,7 +313,7 @@ $app.addEventListener("click",e=>{
   case"cancelnote":editing=null;go();break;
   case"exp":exportPanel("pmle-notes.json",JSON.stringify(S.notes,null,2));break;
   case"expall":exportPanel("pmle-study-data.json",JSON.stringify(S,null,2));break;
-  case"reset":ask("進捗・メモ・カードの記録をすべて削除します。元に戻せません。","すべて削除",()=>{S=clean({});try{localStorage.removeItem(KEY)}catch(e){}go();toast("削除しました")},true);break;
+  case"reset":ask("進捗・メモ・カードの記録をすべて削除します。元に戻せません。","すべて削除",()=>{S=clean({});try{localStorage.removeItem(KEY)}catch(e){}scheduleSync(0);go();toast("削除しました")},true);break;
   }
 });
 $app.addEventListener("input",e=>{if(e.target.id==="nq"){window.__nq=e.target.value;renderNoteList()}});
@@ -280,4 +326,5 @@ $app.addEventListener("change",e=>{
   r.readAsText(f);e.target.value="";
 });
 go();
+cloudInit();
 })();

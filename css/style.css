@@ -45,3 +45,5 @@ textarea{min-height:200px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;max-width:calc(100% - 32px)}
 label{display:block;margin-top:10px;font-size:14px;color:var(--muted)}label.btn{display:inline-block;margin:0;color:var(--fg);font-size:16px}
 [hidden]{display:none!important}
+.sync{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.sync[data-st=ok]{color:var(--ok);border-color:var(--ok)}.sync[data-st=error]{color:var(--ng);border-color:var(--ng)}
